@@ -1,11 +1,23 @@
 from flask import Flask, request, jsonify
 import sqlite3
 import json
-import sys
-import os
 from datetime import datetime
 
 app = Flask(__name__)
+
+def post_not_found(post_id):
+
+    con =  sqlite3.connect('blog.db')
+    cursor = con.cursor()
+
+    cursor.execute('SELECT * FROM posts WHERE rowid = :id', {'id':post_id})
+    if cursor.fetchone() == None:
+
+        con.close()
+        return True
+    else:
+        con.close()
+        return False
 
 @app.route('/posts', methods=['POST'])
 def create_post():
@@ -41,10 +53,7 @@ def update_post(rowid):
     tags = data['tags']
     tags_str = json.dumps(tags)
 
-    cursor.execute('SELECT * FROM posts WHERE rowid = :id', {'id':rowid})
-    if cursor.fetchone() == None:
-
-        con.close()
+    if post_not_found(rowid):
         return jsonify({'error': 'Post not found!'}), 404
     
     try:
@@ -61,6 +70,75 @@ def update_post(rowid):
     updated_row = cursor.fetchone()
     con.close()
     return jsonify({'id': updated_row[0], 'title': updated_row[1], 'content': updated_row[2], 'category': updated_row[3], 'tags': json.loads(updated_row[4]), 'created_at':updated_row[5], 'updated_at': updated_row[6]}), 200
+
+@app.route('/posts/<int:rowid>', methods=['DELETE'])
+def delete_post(rowid):
+
+    con = sqlite3.connect('blog.db')
+    cursor = con.cursor()
+
+    if post_not_found(rowid):
+        return jsonify({'error': 'Post not found!'}), 404
+
+    try:
+        cursor.execute('DELETE FROM posts WHERE rowid = :id', {'id':rowid})
+        con.commit()
+
+    except sqlite3.Error as e:
+        con.close()
+        return jsonify({'error': str(e)}), 400
+
+    return '', 204
+
+@app.route('/posts/<int:rowid>', methods=['GET'])
+def get_post(rowid):
+
+    con = sqlite3.connect('blog.db')
+    cursor = con.cursor()
+
+    if post_not_found(rowid):
+        return jsonify({'error': 'Post not found!'}), 404
+
+    cursor.execute('SELECT * FROM posts WHERE rowid = :id', {'id':rowid})
+    data = cursor.fetchone()
+    con.close()
+
+    return jsonify({'id': data[0], 'title': data[1], 'content': data[2], 'category': data[3], 'tags': json.loads(data[4]), 'created_at':data[5], 'updated_at': data[6]}), 200
+
+@app.route('/posts', methods=['GET'])
+def get_all_posts():
+
+    con = sqlite3.connect('blog.db')
+    cursor = con.cursor()
+    term = request.args.get('term')
+    search_term = f"%{term}%"
+
+    if term:
+        cursor.execute('SELECT * FROM posts WHERE title LIKE :term OR content LIKE :term OR category LIKE :term', {'term':search_term})
+        data = cursor.fetchall()
+        con.close()
+        new_list = []
+        
+        for row in data:
+        
+            if row:
+                new_list.append({'id': row[0], 'title': row[1], 'content': row[2], 'category': row[3], 'tags': json.loads(row[4]), 'created_at':row[5], 'updated_at': row[6]})
+            
+        return jsonify(new_list), 200
+
+    else:
+    
+        cursor.execute('SELECT * FROM posts')
+        data = cursor.fetchall()
+        con.close()
+        new_list = []
+
+        for row in data:
+
+            if row:
+                new_list.append({'id': row[0], 'title': row[1], 'content': row[2], 'category': row[3], 'tags': json.loads(row[4]), 'created_at':row[5], 'updated_at': row[6]})
+        
+        return jsonify(new_list), 200
 
 
 if __name__=='__main__':
